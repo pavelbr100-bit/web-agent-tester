@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Web Agent Tester</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #0f1117;
+      color: #e2e8f0;
+      min-height: 100vh;
+    }
+
+    header {
+      background: #1a1d27;
+      border-bottom: 1px solid #2d3148;
+      padding: 0 24px;
+      height: 56px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    header .logo {
+      width: 32px; height: 32px;
+      background: #6366f1;
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 16px;
+    }
+
+    header h1 { font-size: 16px; font-weight: 600; color: #f1f5f9; }
+    header span { font-size: 13px; color: #64748b; }
+
+    main {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 32px 24px;
+    }
+
+    .control-bar {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      margin-bottom: 32px;
+      flex-wrap: wrap;
+    }
+
+    select {
+      flex: 1;
+      min-width: 220px;
+      background: #1a1d27;
+      border: 1px solid #2d3148;
+      color: #e2e8f0;
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 14px;
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2.5'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 12px center;
+      cursor: pointer;
+    }
+
+    select:focus { outline: none; border-color: #6366f1; }
+
+    .meta {
+      font-size: 13px;
+      color: #64748b;
+      padding: 10px 14px;
+      background: #1a1d27;
+      border: 1px solid #2d3148;
+      border-radius: 8px;
+      white-space: nowrap;
+    }
+
+    button#run-btn {
+      padding: 10px 24px;
+      background: #6366f1;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s;
+      white-space: nowrap;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    button#run-btn:hover:not(:disabled) { background: #4f46e5; }
+    button#run-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .spinner {
+      width: 14px; height: 14px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      display: none;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Summary bar */
+    #summary-bar {
+      display: none;
+      gap: 16px;
+      margin-bottom: 24px;
+      padding: 16px 20px;
+      background: #1a1d27;
+      border: 1px solid #2d3148;
+      border-radius: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    #summary-bar .stat { display: flex; flex-direction: column; gap: 2px; }
+    #summary-bar .stat-label { font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; }
+    #summary-bar .stat-value { font-size: 22px; font-weight: 700; }
+    #summary-bar .stat-value.green { color: #34d399; }
+    #summary-bar .stat-value.red { color: #f87171; }
+    #summary-bar .stat-value.blue { color: #818cf8; }
+    #summary-bar .divider { width: 1px; height: 36px; background: #2d3148; }
+
+    /* Goals list */
+    #goals { display: flex; flex-direction: column; gap: 12px; }
+
+    .goal-card {
+      background: #1a1d27;
+      border: 1px solid #2d3148;
+      border-radius: 10px;
+      overflow: hidden;
+      transition: border-color 0.2s;
+    }
+
+    .goal-card.running { border-color: #6366f1; }
+    .goal-card.passed { border-color: #34d399; }
+    .goal-card.failed { border-color: #f87171; }
+
+    .goal-header {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      padding: 14px 16px;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .goal-status {
+      width: 22px; height: 22px;
+      border-radius: 50%;
+      background: #2d3148;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+      margin-top: 1px;
+      font-size: 12px;
+    }
+
+    .goal-status.running {
+      background: #6366f1;
+      animation: pulse 1.2s ease-in-out infinite;
+    }
+
+    .goal-status.passed { background: #059669; }
+    .goal-status.failed { background: #dc2626; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    .goal-text {
+      flex: 1;
+      font-size: 13px;
+      color: #cbd5e1;
+      line-height: 1.5;
+    }
+
+    .goal-badge {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 4px;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .goal-badge.pending { background: #1e293b; color: #64748b; }
+    .goal-badge.running { background: #312e81; color: #a5b4fc; }
+    .goal-badge.passed { background: #064e3b; color: #6ee7b7; }
+    .goal-badge.failed { background: #7f1d1d; color: #fca5a5; }
+
+    .goal-body {
+      border-top: 1px solid #2d3148;
+      padding: 12px 16px;
+      display: none;
+    }
+
+    .goal-body.open { display: block; }
+
+    .assertion {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 5px 0;
+      font-size: 12px;
+      color: #94a3b8;
+      border-bottom: 1px solid #1e293b;
+    }
+
+    .assertion:last-child { border-bottom: none; }
+    .assertion .icon { flex-shrink: 0; margin-top: 1px; }
+    .assertion.pass .icon { color: #34d399; }
+    .assertion.fail .icon { color: #f87171; }
+    .assertion.pass { color: #cbd5e1; }
+
+    .step-log {
+      font-size: 11px;
+      color: #475569;
+      padding: 3px 0;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+    }
+
+    .goal-summary {
+      margin-top: 10px;
+      padding: 8px 12px;
+      background: #0f1117;
+      border-radius: 6px;
+      font-size: 12px;
+      color: #94a3b8;
+      line-height: 1.5;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 60px 24px;
+      color: #475569;
+    }
+
+    .empty-state .icon { font-size: 48px; margin-bottom: 12px; }
+    .empty-state p { font-size: 14px; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">🤖</div>
+  <h1>Web Agent Tester</h1>
+  <span>Autonomous AI QA powered by Claude + Playwright</span>
+</header>
+
+<main>
+  <div class="control-bar">
+    <select id="target-select">
+      <option value="">Loading targets…</option>
+    </select>
+    <div class="meta" id="target-meta">Select a target</div>
+    <button id="run-btn" disabled>
+      <div class="spinner" id="spinner"></div>
+      <span id="run-label">Run Tests</span>
+    </button>
+  </div>
+
+  <div id="summary-bar">
+    <div class="stat">
+      <span class="stat-label">Passed</span>
+      <span class="stat-value green" id="stat-passed">0</span>
+    </div>
+    <div class="divider"></div>
+    <div class="stat">
+      <span class="stat-label">Failed</span>
+      <span class="stat-value red" id="stat-failed">0</span>
+    </div>
+    <div class="divider"></div>
+    <div class="stat">
+      <span class="stat-label">Total</span>
+      <span class="stat-value blue" id="stat-total">0</span>
+    </div>
+  </div>
+
+  <div id="goals">
+    <div class="empty-state">
+      <div class="icon">🎯</div>
+      <p>Select a target and click <strong>Run Tests</strong> to start</p>
+    </div>
+  </div>
+</main>
+
+<script>
+  const API = ''
+  let targets = []
+  let currentGoals = []
+  let isRunning = false
+
+  const selectEl = document.getElementById('target-select')
+  const metaEl = document.getElementById('target-meta')
+  const runBtn = document.getElementById('run-btn')
+  const runLabel = document.getElementById('run-label')
+  const spinner = document.getElementById('spinner')
+  const goalsEl = document.getElementById('goals')
+  const summaryBar = document.getElementById('summary-bar')
+
+  async function loadTargets() {
+    try {
+      const res = await fetch(`${API}/api/targets`)
+      targets = await res.json()
+      selectEl.innerHTML = targets.length
+        ? targets.map(t => `<option value="${t.name}">${t.label} (${t.goalCount} goals)</option>`).join('')
+        : '<option value="">No targets found</option>'
+      if (targets.length) {
+        runBtn.disabled = false
+        updateMeta()
+      }
+    } catch {
+      selectEl.innerHTML = '<option value="">Error loading targets</option>'
+    }
+  }
+
+  function updateMeta() {
+    const t = targets.find(t => t.name === selectEl.value)
+    metaEl.textContent = t ? `${t.baseUrl} · ${t.goalCount} goals` : 'Select a target'
+  }
+
+  selectEl.addEventListener('change', updateMeta)
+
+  function setRunning(v) {
+    isRunning = v
+    runBtn.disabled = v
+    spinner.style.display = v ? 'block' : 'none'
+    runLabel.textContent = v ? 'Running…' : 'Run Tests'
+    selectEl.disabled = v
+  }
+
+  function renderGoals(goals) {
+    currentGoals = goals
+    summaryBar.style.display = 'none'
+    goalsEl.innerHTML = goals.map((g, i) => `
+      <div class="goal-card" id="goal-${i}">
+        <div class="goal-header" onclick="toggleGoal(${i})">
+          <div class="goal-status" id="status-${i}"></div>
+          <div class="goal-text">${i + 1}. ${g}</div>
+          <span class="goal-badge pending" id="badge-${i}">Pending</span>
+        </div>
+        <div class="goal-body" id="body-${i}"></div>
+      </div>
+    `).join('')
+  }
+
+  function toggleGoal(i) {
+    const body = document.getElementById(`body-${i}`)
+    body.classList.toggle('open')
+  }
+
+  function setGoalRunning(i) {
+    document.getElementById(`goal-${i}`).className = 'goal-card running'
+    document.getElementById(`status-${i}`).className = 'goal-status running'
+    const badge = document.getElementById(`badge-${i}`)
+    badge.className = 'goal-badge running'
+    badge.textContent = 'Running…'
+    document.getElementById(`body-${i}`).classList.add('open')
+  }
+
+  function addAssertion(i, passed, message) {
+    const body = document.getElementById(`body-${i}`)
+    const div = document.createElement('div')
+    div.className = `assertion ${passed ? 'pass' : 'fail'}`
+    div.innerHTML = `<span class="icon">${passed ? '✓' : '✗'}</span><span>${message}</span>`
+    body.appendChild(div)
+  }
+
+  function addStep(i, message) {
+    const body = document.getElementById(`body-${i}`)
+    const div = document.createElement('div')
+    div.className = 'step-log'
+    div.textContent = `› ${message}`
+    body.appendChild(div)
+  }
+
+  function setGoalDone(i, passed, summary, iterations) {
+    const card = document.getElementById(`goal-${i}`)
+    card.className = `goal-card ${passed ? 'passed' : 'failed'}`
+    document.getElementById(`status-${i}`).className = `goal-status ${passed ? 'passed' : 'failed'}`
+    document.getElementById(`status-${i}`).textContent = passed ? '✓' : '✗'
+    const badge = document.getElementById(`badge-${i}`)
+    badge.className = `goal-badge ${passed ? 'passed' : 'failed'}`
+    badge.textContent = passed ? `Passed · ${iterations}s` : `Failed · ${iterations}s`
+    if (summary) {
+      const body = document.getElementById(`body-${i}`)
+      const div = document.createElement('div')
+      div.className = 'goal-summary'
+      div.textContent = summary
+      body.appendChild(div)
+    }
+  }
+
+  function updateSummary(passed, failed, total) {
+    summaryBar.style.display = 'flex'
+    document.getElementById('stat-passed').textContent = passed
+    document.getElementById('stat-failed').textContent = failed
+    document.getElementById('stat-total').textContent = total
+  }
+
+  runBtn.addEventListener('click', async () => {
+    if (isRunning) return
+    const targetName = selectEl.value
+    if (!targetName) return
+
+    setRunning(true)
+    goalsEl.innerHTML = '<div class="empty-state"><p>Connecting to agent…</p></div>'
+
+    const es = new EventSource(`${API}/api/run/${targetName}`)
+
+    es.onmessage = (e) => {
+      const data = JSON.parse(e.data)
+
+      if (data.type === 'start') {
+        renderGoals(data.goals)
+      }
+
+      if (data.type === 'goal_start') {
+        setGoalRunning(data.goalIndex)
+      }
+
+      if (data.type === 'assertion') {
+        const running = currentGoals.findIndex((_, i) =>
+          document.getElementById(`badge-${i}`)?.textContent?.startsWith('Running')
+        )
+        if (running >= 0) addAssertion(running, data.passed, data.message)
+      }
+
+      if (data.type === 'step') {
+        const running = currentGoals.findIndex((_, i) =>
+          document.getElementById(`badge-${i}`)?.textContent?.startsWith('Running')
+        )
+        if (running >= 0) addStep(running, data.message)
+      }
+
+      if (data.type === 'goal_done') {
+        setGoalDone(data.goalIndex, data.passed, data.summary, data.iterations)
+      }
+
+      if (data.type === 'run_done') {
+        updateSummary(data.passed, data.failed, data.total)
+        setRunning(false)
+        es.close()
+      }
+
+      if (data.type === 'fatal_error') {
+        goalsEl.innerHTML = `<div class="empty-state"><p style="color:#f87171">Error: ${data.message}</p></div>`
+        setRunning(false)
+        es.close()
+      }
+    }
+
+    es.onerror = () => {
+      setRunning(false)
+      es.close()
+    }
+  })
+
+  loadTargets()
+</script>
+</body>
+</html>

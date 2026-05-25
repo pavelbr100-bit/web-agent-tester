@@ -1,7 +1,17 @@
 import Anthropic from '@anthropic-ai/sdk'
-import { toolDefinitions, executeTool, type ToolContext, type ToolResult } from './tools.js'
+import { toolDefinitions, executeTool, type ToolContext } from './tools.js'
 
 const MAX_ITERATIONS = 40
+
+export interface AgentEvent {
+  type: 'goal_start' | 'assertion' | 'step' | 'goal_done' | 'error'
+  goal?: string
+  goalIndex?: number
+  passed?: boolean
+  message?: string
+  summary?: string
+  iterations?: number
+}
 
 export interface AgentResult {
   target: string
@@ -18,9 +28,13 @@ export async function runGoal(
   target: string,
   baseUrl: string,
   goal: string,
+  goalIndex: number,
+  onEvent?: (e: AgentEvent) => void,
 ): Promise<AgentResult> {
   const assertions: Array<{ passed: boolean; message: string }> = []
   const messages: Anthropic.MessageParam[] = []
+
+  onEvent?.({ type: 'goal_start', goal, goalIndex })
 
   const systemPrompt = `You are an autonomous QA agent testing web applications.
 
@@ -38,7 +52,6 @@ Instructions:
 - If something is broken or unexpected, use assert(passed=false, ...) to record it
 - Max ${MAX_ITERATIONS} steps — be efficient`
 
-  // Start: take a screenshot to orient
   messages.push({
     role: 'user',
     content: `Begin testing goal: "${goal}". Start by navigating to ${baseUrl} then proceed.`,
@@ -58,23 +71,19 @@ Instructions:
       messages,
     })
 
-    // Add assistant message to history
     messages.push({ role: 'assistant', content: response.content })
 
-    // Collect all tool uses in this response
     const toolUses = response.content.filter((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use')
 
-    if (toolUses.length === 0 || response.stop_reason === 'end_turn') {
-      // No tool calls — agent decided it's done without calling done()
-      break
-    }
+    if (toolUses.length === 0 || response.stop_reason === 'end_turn') break
 
-    // Execute each tool and collect results
     const toolResults: Anthropic.ToolResultBlockParam[] = []
     let isDone = false
     let doneSummary = ''
 
     for (const tu of toolUses) {
+      const prevAssertionCount = assertions.length
+
       const { result, done, summary } = await executeTool(
         ctx,
         tu.name,
@@ -82,12 +91,18 @@ Instructions:
         assertions,
       )
 
+      // Emit any new assertions
+      for (let i = prevAssertionCount; i < assertions.length; i++) {
+        onEvent?.({ type: 'assertion', passed: assertions[i].passed, message: assertions[i].message })
+      }
+
+      if (tu.name !== 'screenshot' && tu.name !== 'assert' && tu.name !== 'done') {
+        onEvent?.({ type: 'step', message: `${tu.name}: ${JSON.stringify(tu.input).slice(0, 80)}` })
+      }
+
       const content: Array<Anthropic.TextBlockParam | Anthropic.ImageBlockParam> = result.map(r => {
         if (r.type === 'text') return { type: 'text' as const, text: r.text }
-        return {
-          type: 'image' as const,
-          source: r.source,
-        }
+        return { type: 'image' as const, source: r.source }
       })
 
       toolResults.push({ type: 'tool_result', tool_use_id: tu.id, content })
@@ -107,6 +122,8 @@ Instructions:
   }
 
   const allPassed = assertions.length > 0 && assertions.every(a => a.passed)
+
+  onEvent?.({ type: 'goal_done', passed: allPassed, summary: finalSummary, iterations, goalIndex })
 
   return {
     target,
