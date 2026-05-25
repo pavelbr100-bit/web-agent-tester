@@ -66,4 +66,6 @@ async function main() {
   process.exit(passed === results.length ? 0 : 1)
 }
 
-main()
+// Only run CLI when executed directly, not when imported by server.ts
+const isMain = process.argv[1]?.endsWith('runner.ts') || process.argv[1]?.endsWith('runner.js')
+if (isMain) main()
