@@ -1,0 +1,22 @@
+{
+  "name": "web-agent-tester",
+  "version": "1.0.0",
+  "description": "Autonomous agentic AI web app tester powered by Claude + Playwright",
+  "scripts": {
+    "run": "tsx src/runner.ts",
+    "run:finwiser": "tsx src/runner.ts finwiser"
+  },
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.98.0",
+    "dotenv": "^17.4.2",
+    "playwright": "^1.60.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.22.3",
+    "typescript": "^6.0.3"
+  }
+}
