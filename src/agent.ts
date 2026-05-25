@@ -2,7 +2,7 @@ import OpenAI from 'openai'
 import { toolDefinitions, executeTool, type ToolContext } from './tools.js'
 
 const MAX_ITERATIONS = 20
-const OLLAMA_MODEL = process.env.OLLAMA_MODEL ?? 'llama3.1:8b'
+const OLLAMA_MODEL = process.env.OLLAMA_MODEL ?? 'qwen2.5:7b'
 
 export interface AgentEvent {
   type: 'goal_start' | 'assertion' | 'step' | 'goal_done' | 'error'
@@ -81,8 +81,20 @@ Instructions:
     messages.push(msg)
 
     const toolCalls = msg.tool_calls ?? []
+    const finishReason = response.choices[0].finish_reason
 
-    if (toolCalls.length === 0 || response.choices[0].finish_reason === 'stop') break
+    // Log what the model returned so we can debug failures
+    onEvent?.({ type: 'step', message: `model response: finish=${finishReason} tools=${toolCalls.length} text=${(msg.content ?? '').slice(0, 60)}`, goalIndex })
+
+    // If model responded with text only (no tool calls), nudge it back on track
+    if (toolCalls.length === 0) {
+      if (finishReason === 'stop' && msg.content) {
+        // Model finished without calling done() — treat as implicit completion with no assertions
+        onEvent?.({ type: 'step', message: `model stopped without tool calls: ${msg.content.slice(0, 120)}`, goalIndex })
+        break
+      }
+      break
+    }
 
     let isDone = false
     let doneSummary = ''
@@ -92,8 +104,10 @@ Instructions:
       const name = tc.function.name
       let input: Record<string, unknown> = {}
       try {
-        input = JSON.parse(tc.function.arguments)
-      } catch { /* malformed JSON from model */ }
+        input = JSON.parse(tc.function.arguments || '{}')
+      } catch {
+        onEvent?.({ type: 'step', message: `malformed tool args for ${name}: ${tc.function.arguments}`, goalIndex })
+      }
 
       const prevAssertionCount = assertions.length
       const { result, done, summary } = await executeTool(ctx, name, input, assertions)

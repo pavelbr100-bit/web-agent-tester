@@ -183,6 +183,12 @@ export async function executeTool(
 
     case 'click': {
       const sel = input.selector as string
+      // If model passes a URL path or full URL, navigate instead of click
+      if (sel.startsWith('http://') || sel.startsWith('https://') || sel.startsWith('/')) {
+        const url = sel.startsWith('/') ? `${new URL(page.url()).origin}${sel}` : sel
+        await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 })
+        return { result: `Navigated to ${url} (redirected from click)`, done: false }
+      }
       try {
         const loc = page.locator(sel).first()
         await loc.waitFor({ timeout: 5000 })
