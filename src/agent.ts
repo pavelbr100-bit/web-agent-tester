@@ -45,7 +45,7 @@ Your current test goal: "${goal}"
 
 Instructions:
 - Use the available tools to navigate the app, interact with it, and verify the goal
-- Always take a screenshot after navigating or after key interactions so you can see the page
+- Take a screenshot only when you need to see the current state of the page (not after every action)
 - Use assert() to record specific checks (e.g. "Monthly payment is a valid dollar amount")
 - Be thorough: fill in realistic test values, submit forms, and verify results make sense
 - When you have fully tested the goal, call done() with a summary
@@ -114,6 +114,18 @@ Instructions:
     }
 
     messages.push({ role: 'user', content: toolResults })
+
+    // Prune screenshots from history — replace with placeholder so they don't
+    // get resent on every subsequent API call (major token savings)
+    for (const msg of messages) {
+      if (!Array.isArray(msg.content)) continue
+      for (const block of msg.content as Anthropic.ToolResultBlockParam[]) {
+        if (block.type !== 'tool_result' || !Array.isArray(block.content)) continue
+        block.content = (block.content as Array<Anthropic.TextBlockParam | Anthropic.ImageBlockParam>).map(b =>
+          b.type === 'image' ? { type: 'text' as const, text: '[screenshot]' } : b,
+        )
+      }
+    }
 
     if (isDone) {
       finalSummary = doneSummary

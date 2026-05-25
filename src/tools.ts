@@ -14,7 +14,7 @@ export async function createBrowser(): Promise<Browser> {
 
 export async function createPage(browser: Browser): Promise<ToolContext> {
   const page = await browser.newPage()
-  await page.setViewportSize({ width: 1280, height: 800 })
+  await page.setViewportSize({ width: 1024, height: 600 })
   return { browser, page }
 }
 
