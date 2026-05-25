@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { toolDefinitions, executeTool, type ToolContext } from './tools.js'
 
-const MAX_ITERATIONS = 40
+const MAX_ITERATIONS = 20
 
 export interface AgentEvent {
   type: 'goal_start' | 'assertion' | 'step' | 'goal_done' | 'error'
@@ -64,7 +64,7 @@ Instructions:
     iterations++
 
     const response = await client.messages.create({
-      model: 'claude-sonnet-4-6',
+      model: 'claude-haiku-4-5-20251001',
       max_tokens: 4096,
       system: systemPrompt,
       tools: toolDefinitions,

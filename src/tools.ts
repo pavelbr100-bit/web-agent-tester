@@ -8,8 +8,11 @@ export interface ToolContext {
 
 export type ToolResult = { type: 'text'; text: string } | { type: 'image'; source: { type: 'base64'; media_type: 'image/png'; data: string } }
 
-export async function createBrowser(): Promise<ToolContext> {
-  const browser = await chromium.launch({ headless: true })
+export async function createBrowser(): Promise<Browser> {
+  return chromium.launch({ headless: true })
+}
+
+export async function createPage(browser: Browser): Promise<ToolContext> {
   const page = await browser.newPage()
   await page.setViewportSize({ width: 1280, height: 800 })
   return { browser, page }
