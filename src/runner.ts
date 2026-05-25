@@ -1,7 +1,6 @@
 import 'dotenv/config'
-import Anthropic from '@anthropic-ai/sdk'
 import { createBrowser, createPage } from './tools.js'
-import { runGoal, type AgentResult, type AgentEvent } from './agent.js'
+import { createClient, runGoal, type AgentResult, type AgentEvent } from './agent.js'
 import { writeFileSync, mkdirSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
@@ -17,13 +16,8 @@ export async function runTarget(
   targetName: string,
   onEvent?: (e: AgentEvent & { type: string }) => void,
 ): Promise<AgentResult[]> {
-  const apiKey = process.env.ANTHROPIC_API_KEY
-  if (!apiKey) throw new Error('Missing ANTHROPIC_API_KEY')
-
   const target = await loadTarget(targetName)
-  const client = new Anthropic({ apiKey })
-
-  // One browser, one page per goal — all run in parallel
+  const client = createClient()
   const browser = await createBrowser()
 
   const results = await Promise.all(
@@ -61,13 +55,12 @@ export async function runTarget(
   return results
 }
 
-// CLI entry point
 async function main() {
   const targetName = process.argv[2]
   if (!targetName) { console.error('Usage: npm run run <target-name>'); process.exit(1) }
 
   const target = await loadTarget(targetName)
-  console.log(`\n🤖 web-agent-tester — ${target.name}\n📍 ${target.baseUrl}\n🎯 ${target.goals.length} goals (running in parallel)\n`)
+  console.log(`\n🤖 web-agent-tester — ${target.name}\n📍 ${target.baseUrl}\n🎯 ${target.goals.length} goals (parallel, Ollama)\n`)
 
   const results = await runTarget(targetName, (e) => {
     const prefix = `[Goal ${(e.goalIndex ?? 0) + 1}]`
@@ -82,6 +75,5 @@ async function main() {
   process.exit(passed === results.length ? 0 : 1)
 }
 
-// Only run CLI when executed directly, not when imported by server.ts
 const isMain = process.argv[1]?.endsWith('runner.ts') || process.argv[1]?.endsWith('runner.js')
 if (isMain) main()

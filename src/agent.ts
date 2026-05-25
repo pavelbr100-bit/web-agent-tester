@@ -1,7 +1,8 @@
-import Anthropic from '@anthropic-ai/sdk'
+import OpenAI from 'openai'
 import { toolDefinitions, executeTool, type ToolContext } from './tools.js'
 
 const MAX_ITERATIONS = 20
+const OLLAMA_MODEL = process.env.OLLAMA_MODEL ?? 'llama3.1:8b'
 
 export interface AgentEvent {
   type: 'goal_start' | 'assertion' | 'step' | 'goal_done' | 'error'
@@ -22,8 +23,15 @@ export interface AgentResult {
   iterations: number
 }
 
+export function createClient(): OpenAI {
+  return new OpenAI({
+    baseURL: process.env.OLLAMA_HOST ?? 'http://localhost:11434/v1',
+    apiKey: 'ollama', // required by SDK but not used by Ollama
+  })
+}
+
 export async function runGoal(
-  client: Anthropic,
+  client: OpenAI,
   ctx: ToolContext,
   target: string,
   baseUrl: string,
@@ -32,7 +40,7 @@ export async function runGoal(
   onEvent?: (e: AgentEvent) => void,
 ): Promise<AgentResult> {
   const assertions: Array<{ passed: boolean; message: string }> = []
-  const messages: Anthropic.MessageParam[] = []
+  const messages: OpenAI.ChatCompletionMessageParam[] = []
 
   onEvent?.({ type: 'goal_start', goal, goalIndex })
 
@@ -44,19 +52,17 @@ Base URL: ${baseUrl}
 Your current test goal: "${goal}"
 
 Instructions:
-- After navigating, ALWAYS call get_page_info() first — it gives you exact input selectors, button text, and headings so you know what to interact with
-- Use the selectors from get_page_info() in fill() and click() calls — do not guess selectors
+- After navigating, ALWAYS call get_page_info() first — it gives you exact input selectors, button text, and headings
+- Use the selectors from get_page_info() in fill() and click() — do not guess selectors
 - Use get_text() to read results after form submission
-- NEVER use screenshot() — it is extremely expensive. Use get_page_info() and get_text() instead.
-- Use assert() to record specific checks with what you actually found (e.g. "Monthly payment shows $2,029 which is in range $1,000–$5,000")
-- When you have fully tested the goal, call done() with a summary
+- NEVER use screenshot() — use get_page_info() and get_text() instead
+- Use assert() to record specific checks with what you actually found
+- When done, call done() with a summary
 - If something is broken, use assert(passed=false, message="what went wrong")
 - Max ${MAX_ITERATIONS} steps — be efficient`
 
-  messages.push({
-    role: 'user',
-    content: `Begin testing goal: "${goal}". Start by navigating to ${baseUrl} then proceed.`,
-  })
+  messages.push({ role: 'system', content: systemPrompt })
+  messages.push({ role: 'user', content: `Begin testing goal: "${goal}". Start by navigating to ${baseUrl} then proceed.` })
 
   let iterations = 0
   let finalSummary = ''
@@ -64,67 +70,49 @@ Instructions:
   while (iterations < MAX_ITERATIONS) {
     iterations++
 
-    const response = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 4096,
-      system: systemPrompt,
-      tools: toolDefinitions,
+    const response = await client.chat.completions.create({
+      model: OLLAMA_MODEL,
       messages,
+      tools: toolDefinitions,
+      tool_choice: 'auto',
     })
 
-    messages.push({ role: 'assistant', content: response.content })
+    const msg = response.choices[0].message
+    messages.push(msg)
 
-    const toolUses = response.content.filter((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use')
+    const toolCalls = msg.tool_calls ?? []
 
-    if (toolUses.length === 0 || response.stop_reason === 'end_turn') break
+    if (toolCalls.length === 0 || response.choices[0].finish_reason === 'stop') break
 
-    const toolResults: Anthropic.ToolResultBlockParam[] = []
     let isDone = false
     let doneSummary = ''
 
-    for (const tu of toolUses) {
+    for (const tc of toolCalls) {
+      if (tc.type !== 'function') continue
+      const name = tc.function.name
+      let input: Record<string, unknown> = {}
+      try {
+        input = JSON.parse(tc.function.arguments)
+      } catch { /* malformed JSON from model */ }
+
       const prevAssertionCount = assertions.length
+      const { result, done, summary } = await executeTool(ctx, name, input, assertions)
 
-      const { result, done, summary } = await executeTool(
-        ctx,
-        tu.name,
-        tu.input as Record<string, unknown>,
-        assertions,
-      )
-
-      // Emit any new assertions — include goalIndex so UI routes to the right card
+      // Emit new assertions with goalIndex
       for (let i = prevAssertionCount; i < assertions.length; i++) {
         onEvent?.({ type: 'assertion', passed: assertions[i].passed, message: assertions[i].message, goalIndex })
       }
 
-      if (tu.name !== 'screenshot' && tu.name !== 'assert' && tu.name !== 'done') {
-        onEvent?.({ type: 'step', message: `${tu.name}: ${JSON.stringify(tu.input).slice(0, 80)}`, goalIndex })
+      if (name !== 'assert' && name !== 'done') {
+        onEvent?.({ type: 'step', message: `${name}: ${JSON.stringify(input).slice(0, 80)}`, goalIndex })
       }
 
-      const content: Array<Anthropic.TextBlockParam | Anthropic.ImageBlockParam> = result.map(r => {
-        if (r.type === 'text') return { type: 'text' as const, text: r.text }
-        return { type: 'image' as const, source: r.source }
-      })
-
-      toolResults.push({ type: 'tool_result', tool_use_id: tu.id, content })
+      // Add tool result to messages
+      messages.push({ role: 'tool', tool_call_id: tc.id, content: result })
 
       if (done) {
         isDone = true
         doneSummary = summary ?? ''
-      }
-    }
-
-    messages.push({ role: 'user', content: toolResults })
-
-    // Prune screenshots from history — replace with placeholder so they don't
-    // get resent on every subsequent API call (major token savings)
-    for (const msg of messages) {
-      if (!Array.isArray(msg.content)) continue
-      for (const block of msg.content as Anthropic.ToolResultBlockParam[]) {
-        if (block.type !== 'tool_result' || !Array.isArray(block.content)) continue
-        block.content = (block.content as Array<Anthropic.TextBlockParam | Anthropic.ImageBlockParam>).map(b =>
-          b.type === 'image' ? { type: 'text' as const, text: '[screenshot]' } : b,
-        )
       }
     }
 
@@ -135,7 +123,6 @@ Instructions:
   }
 
   const allPassed = assertions.length > 0 && assertions.every(a => a.passed)
-
   onEvent?.({ type: 'goal_done', passed: allPassed, summary: finalSummary, iterations, goalIndex })
 
   return {
