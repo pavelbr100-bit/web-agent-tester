@@ -130,6 +130,40 @@ export const toolDefinitions: OpenAI.ChatCompletionTool[] = [
   },
 ]
 
+async function getPageInfo(page: Page): Promise<string> {
+  const info = await page.evaluate(() => {
+    const title = document.title
+    const headings = Array.from(document.querySelectorAll('h1,h2,h3')).map(h => `${h.tagName}: ${h.textContent?.trim()}`)
+    const inputs = Array.from(document.querySelectorAll('input,textarea,select')).map(el => {
+      const input = el as HTMLInputElement
+      const id = input.id ? `#${input.id}` : ''
+      const name = input.name ? `[name="${input.name}"]` : ''
+      const selector = id || name || input.tagName.toLowerCase()
+      const label =
+        document.querySelector(`label[for="${input.id}"]`)?.textContent?.trim() ??
+        input.closest('label')?.textContent?.trim() ??
+        input.getAttribute('placeholder') ??
+        input.getAttribute('aria-label') ??
+        ''
+      return `SELECTOR=${selector}  LABEL=${label}  TYPE=${input.type ?? 'text'}`
+    })
+    const buttons = Array.from(document.querySelectorAll('button,[role="button"]'))
+      .map(b => b.textContent?.trim() ?? '')
+      .filter(b => b.length > 1)
+      .slice(0, 20)
+    return { title, headings, inputs, buttons }
+  })
+
+  return [
+    `Title: ${info.title}`,
+    `Headings: ${info.headings.join(' | ')}`,
+    `INPUTS — use the SELECTOR value exactly in fill(selector, value):`,
+    ...info.inputs.map(i => `  ${i}`),
+    `BUTTONS — use the button text exactly in click(selector):`,
+    ...info.buttons.map(b => `  ${b}`),
+  ].join('\n').slice(0, 5000)
+}
+
 export async function executeTool(
   ctx: ToolContext,
   name: string,
@@ -140,48 +174,16 @@ export async function executeTool(
 
   switch (name) {
     case 'navigate': {
-      await page.goto(input.url as string, { waitUntil: 'load', timeout: 30000 })
-      await page.waitForTimeout(800) // let React hydrate
-      return { result: `Navigated to ${input.url}`, done: false }
+      const url = input.url as string
+      await page.goto(url, { waitUntil: 'load', timeout: 30000 })
+      await page.waitForTimeout(800)
+      // Return page info immediately so model has selectors without a separate call
+      const info = await getPageInfo(page)
+      return { result: `Navigated to ${url}\n\n${info}`, done: false }
     }
 
     case 'get_page_info': {
-      const info = await page.evaluate(() => {
-        const title = document.title
-        const headings = Array.from(document.querySelectorAll('h1,h2,h3')).map(h => `${h.tagName}: ${h.textContent?.trim()}`)
-
-        const inputs = Array.from(document.querySelectorAll('input,textarea,select')).map(el => {
-          const input = el as HTMLInputElement
-          const id = input.id ? `#${input.id}` : ''
-          const name = input.name ? `[name="${input.name}"]` : ''
-          const selector = id || name || input.tagName.toLowerCase()
-          const label =
-            document.querySelector(`label[for="${input.id}"]`)?.textContent?.trim() ??
-            input.closest('label')?.textContent?.trim() ??
-            input.getAttribute('placeholder') ??
-            input.getAttribute('aria-label') ??
-            ''
-          return `SELECTOR=${selector}  LABEL=${label}  TYPE=${input.type ?? 'text'}`
-        })
-
-        const buttons = Array.from(document.querySelectorAll('button,[role="button"]'))
-          .map(b => b.textContent?.trim() ?? '')
-          .filter(b => b.length > 1)
-          .slice(0, 20)
-
-        return { title, headings, inputs, buttons }
-      })
-
-      const text = [
-        `Title: ${info.title}`,
-        `Headings: ${info.headings.join(' | ')}`,
-        `INPUTS — pass SELECTOR value exactly to fill(selector, value):`,
-        ...info.inputs.map(i => `  ${i}`),
-        `BUTTONS — pass button text exactly to click(selector):`,
-        ...info.buttons.map(b => `  ${b}`),
-      ].join('\n')
-
-      return { result: text.slice(0, 5000), done: false }
+      return { result: await getPageInfo(page), done: false }
     }
 
     case 'click': {
