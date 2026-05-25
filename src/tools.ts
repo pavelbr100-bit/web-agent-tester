@@ -140,7 +140,8 @@ export async function executeTool(
 
   switch (name) {
     case 'navigate': {
-      await page.goto(input.url as string, { waitUntil: 'networkidle', timeout: 30000 })
+      await page.goto(input.url as string, { waitUntil: 'load', timeout: 30000 })
+      await page.waitForTimeout(800) // let React hydrate
       return { result: `Navigated to ${input.url}`, done: false }
     }
 
@@ -160,12 +161,12 @@ export async function executeTool(
             input.getAttribute('placeholder') ??
             input.getAttribute('aria-label') ??
             ''
-          return `fill("${selector}", ...) | label: "${label}" | type: ${input.type ?? 'text'}`
+          return `SELECTOR=${selector}  LABEL=${label}  TYPE=${input.type ?? 'text'}`
         })
 
         const buttons = Array.from(document.querySelectorAll('button,[role="button"]'))
-          .map(b => `"${b.textContent?.trim()}"`)
-          .filter(b => b.length > 2)
+          .map(b => b.textContent?.trim() ?? '')
+          .filter(b => b.length > 1)
           .slice(0, 20)
 
         return { title, headings, inputs, buttons }
@@ -173,10 +174,12 @@ export async function executeTool(
 
       const text = [
         `Title: ${info.title}`,
-        `Headings:\n${info.headings.map(h => `  ${h}`).join('\n')}`,
-        `Inputs — copy the selector in quotes exactly into fill():\n${info.inputs.map(i => `  ${i}`).join('\n')}`,
-        `Buttons — copy the text in quotes exactly into click():\n  ${info.buttons.join(', ')}`,
-      ].join('\n\n')
+        `Headings: ${info.headings.join(' | ')}`,
+        `INPUTS — pass SELECTOR value exactly to fill(selector, value):`,
+        ...info.inputs.map(i => `  ${i}`),
+        `BUTTONS — pass button text exactly to click(selector):`,
+        ...info.buttons.map(b => `  ${b}`),
+      ].join('\n')
 
       return { result: text.slice(0, 5000), done: false }
     }
