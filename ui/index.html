@@ -428,17 +428,11 @@
       }
 
       if (data.type === 'assertion') {
-        const running = currentGoals.findIndex((_, i) =>
-          document.getElementById(`badge-${i}`)?.textContent?.startsWith('Running')
-        )
-        if (running >= 0) addAssertion(running, data.passed, data.message)
+        if (data.goalIndex != null) addAssertion(data.goalIndex, data.passed, data.message)
       }
 
       if (data.type === 'step') {
-        const running = currentGoals.findIndex((_, i) =>
-          document.getElementById(`badge-${i}`)?.textContent?.startsWith('Running')
-        )
-        if (running >= 0) addStep(running, data.message)
+        if (data.goalIndex != null) addStep(data.goalIndex, data.message)
       }
 
       if (data.type === 'goal_done') {

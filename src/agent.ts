@@ -91,13 +91,13 @@ Instructions:
         assertions,
       )
 
-      // Emit any new assertions
+      // Emit any new assertions — include goalIndex so UI routes to the right card
       for (let i = prevAssertionCount; i < assertions.length; i++) {
-        onEvent?.({ type: 'assertion', passed: assertions[i].passed, message: assertions[i].message })
+        onEvent?.({ type: 'assertion', passed: assertions[i].passed, message: assertions[i].message, goalIndex })
       }
 
       if (tu.name !== 'screenshot' && tu.name !== 'assert' && tu.name !== 'done') {
-        onEvent?.({ type: 'step', message: `${tu.name}: ${JSON.stringify(tu.input).slice(0, 80)}` })
+        onEvent?.({ type: 'step', message: `${tu.name}: ${JSON.stringify(tu.input).slice(0, 80)}`, goalIndex })
       }
 
       const content: Array<Anthropic.TextBlockParam | Anthropic.ImageBlockParam> = result.map(r => {
