@@ -160,7 +160,7 @@ export async function executeTool(
             input.getAttribute('placeholder') ??
             input.getAttribute('aria-label') ??
             ''
-          return `${input.tagName.toLowerCase()}${selector} — label: "${label}", type: ${input.type ?? 'text'}, value: "${input.value}"`
+          return `fill("${selector}", ...) | label: "${label}" | type: ${input.type ?? 'text'}`
         })
 
         const buttons = Array.from(document.querySelectorAll('button,[role="button"]'))
@@ -174,8 +174,8 @@ export async function executeTool(
       const text = [
         `Title: ${info.title}`,
         `Headings:\n${info.headings.map(h => `  ${h}`).join('\n')}`,
-        `Inputs (use these selectors):\n${info.inputs.map(i => `  ${i}`).join('\n')}`,
-        `Buttons:\n  ${info.buttons.join(', ')}`,
+        `Inputs — copy the selector in quotes exactly into fill():\n${info.inputs.map(i => `  ${i}`).join('\n')}`,
+        `Buttons — copy the text in quotes exactly into click():\n  ${info.buttons.join(', ')}`,
       ].join('\n\n')
 
       return { result: text.slice(0, 5000), done: false }

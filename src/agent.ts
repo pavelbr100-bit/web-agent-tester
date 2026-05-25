@@ -52,14 +52,14 @@ Base URL: ${baseUrl}
 Your current test goal: "${goal}"
 
 Instructions:
-- After navigating, ALWAYS call get_page_info() first — it gives you exact input selectors, button text, and headings
-- Use the selectors from get_page_info() in fill() and click() — do not guess selectors
-- Use get_text() to read results after form submission
-- NEVER use screenshot() — use get_page_info() and get_text() instead
-- Use assert() to record specific checks with what you actually found
-- When done, call done() with a summary
-- If something is broken, use assert(passed=false, message="what went wrong")
-- Max ${MAX_ITERATIONS} steps — be efficient`
+- After navigating, ALWAYS call get_page_info() first — copy selectors EXACTLY as shown, do not add or change anything
+- Use get_text() to read results after interactions
+- NEVER use screenshot()
+- You MUST call assert() for every check — a test with zero assert() calls automatically FAILS
+- You MUST call assert() at least once before calling done()
+- Call done() only after asserting — never call done() as your first or only action
+- If something is broken, call assert(passed=false, message="exact error found")
+- Max ${MAX_ITERATIONS} steps`
 
   messages.push({ role: 'system', content: systemPrompt })
   messages.push({ role: 'user', content: `Begin testing goal: "${goal}". Start by navigating to ${baseUrl} then proceed.` })
@@ -125,6 +125,11 @@ Instructions:
       messages.push({ role: 'tool', tool_call_id: tc.id, content: result })
 
       if (done) {
+        // If model called done() without any assertions, record a failure
+        if (assertions.length === 0) {
+          assertions.push({ passed: false, message: 'No assertions were made — model called done() without verifying anything' })
+          onEvent?.({ type: 'assertion', passed: false, message: assertions[assertions.length - 1].message, goalIndex })
+        }
         isDone = true
         doneSummary = summary ?? ''
       }
