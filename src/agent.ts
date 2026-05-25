@@ -44,10 +44,12 @@ Base URL: ${baseUrl}
 Your current test goal: "${goal}"
 
 Instructions:
-- Use the available tools to navigate the app, interact with it, and verify the goal
-- Take a screenshot only when you need to see the current state of the page (not after every action)
+- Use get_text() to read page content — it is fast and cheap. Prefer it for all verification.
+- AVOID screenshot() unless the page is behaving unexpectedly and you cannot diagnose it from text alone. Screenshots are very expensive — use at most 1 per goal.
+- To verify text/values: navigate, then get_text() to read the result. Do NOT screenshot to verify.
+- To interact: use click() and fill() directly. You do not need to screenshot before or after.
 - Use assert() to record specific checks (e.g. "Monthly payment is a valid dollar amount")
-- Be thorough: fill in realistic test values, submit forms, and verify results make sense
+- Fill in realistic test values, submit forms, and verify results make sense from the text content
 - When you have fully tested the goal, call done() with a summary
 - If something is broken or unexpected, use assert(passed=false, ...) to record it
 - Max ${MAX_ITERATIONS} steps — be efficient`
