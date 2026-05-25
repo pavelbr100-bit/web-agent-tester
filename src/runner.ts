@@ -19,27 +19,35 @@ export async function runTarget(
   const target = await loadTarget(targetName)
   const client = createClient()
   const browser = await createBrowser()
+  const CONCURRENCY = parseInt(process.env.CONCURRENCY ?? '2')
 
-  const results = await Promise.all(
-    target.goals.map(async (goal, i) => {
-      const ctx = await createPage(browser)
-      try {
-        return await runGoal(client, ctx, target.name, target.baseUrl, goal, i, onEvent)
-      } catch (err) {
-        onEvent?.({ type: 'error', message: String(err), goalIndex: i })
-        return {
-          target: target.name,
-          goal,
-          passed: false,
-          assertions: [],
-          summary: `Error: ${err}`,
-          iterations: 0,
-        } satisfies AgentResult
-      } finally {
-        await ctx.page.close()
-      }
-    }),
-  )
+  // Run goals in batches of CONCURRENCY
+  const results: AgentResult[] = []
+  for (let i = 0; i < target.goals.length; i += CONCURRENCY) {
+    const batch = target.goals.slice(i, i + CONCURRENCY)
+    const batchResults = await Promise.all(
+      batch.map(async (goal, j) => {
+        const goalIndex = i + j
+        const ctx = await createPage(browser)
+        try {
+          return await runGoal(client, ctx, target.name, target.baseUrl, goal, goalIndex, onEvent)
+        } catch (err) {
+          onEvent?.({ type: 'error', message: String(err), goalIndex })
+          return {
+            target: target.name,
+            goal,
+            passed: false,
+            assertions: [],
+            summary: `Error: ${err}`,
+            iterations: 0,
+          } satisfies AgentResult
+        } finally {
+          await ctx.page.close()
+        }
+      }),
+    )
+    results.push(...batchResults)
+  }
 
   await browser.close()
 
