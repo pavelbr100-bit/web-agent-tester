@@ -21,7 +21,7 @@ export async function createPage(browser: Browser): Promise<ToolContext> {
 export const toolDefinitions: Anthropic.Tool[] = [
   {
     name: 'navigate',
-    description: 'Navigate to a URL',
+    description: 'Navigate to a URL and wait for the page to fully load including JavaScript',
     input_schema: {
       type: 'object' as const,
       properties: { url: { type: 'string', description: 'The URL to navigate to' } },
@@ -29,28 +29,33 @@ export const toolDefinitions: Anthropic.Tool[] = [
     },
   },
   {
+    name: 'get_page_info',
+    description: 'Get a structured summary of the current page: title, headings, all input fields (with labels/placeholders), buttons, and visible text. Use this after navigating to understand the page structure before interacting.',
+    input_schema: { type: 'object' as const, properties: {}, required: [] },
+  },
+  {
     name: 'screenshot',
-    description: 'Take a screenshot of the current page and return it as an image so you can see what is on screen',
+    description: 'Take a screenshot — only use if the page is behaving unexpectedly and text-based tools cannot diagnose it',
     input_schema: { type: 'object' as const, properties: {}, required: [] },
   },
   {
     name: 'click',
-    description: 'Click an element on the page. Provide a CSS selector or visible text label.',
+    description: 'Click an element. Use exact visible button/link text (e.g. "Calculate") or a CSS selector from get_page_info.',
     input_schema: {
       type: 'object' as const,
       properties: {
-        selector: { type: 'string', description: 'CSS selector or visible text (e.g. "button:has-text(\'Calculate\')" or "#submit-btn")' },
+        selector: { type: 'string', description: 'Visible text label or CSS selector' },
       },
       required: ['selector'],
     },
   },
   {
     name: 'fill',
-    description: 'Clear and type text into an input field',
+    description: 'Clear and type into an input field. Use the selector from get_page_info.',
     input_schema: {
       type: 'object' as const,
       properties: {
-        selector: { type: 'string', description: 'CSS selector for the input' },
+        selector: { type: 'string', description: 'CSS selector for the input (from get_page_info)' },
         value: { type: 'string', description: 'Text to type' },
       },
       required: ['selector', 'value'],
@@ -58,46 +63,46 @@ export const toolDefinitions: Anthropic.Tool[] = [
   },
   {
     name: 'select',
-    description: 'Select an option from a <select> dropdown by its visible text or value',
+    description: 'Select an option from a <select> dropdown',
     input_schema: {
       type: 'object' as const,
       properties: {
         selector: { type: 'string', description: 'CSS selector for the <select> element' },
-        value: { type: 'string', description: 'Option value or label to select' },
+        value: { type: 'string', description: 'Option value or visible label to select' },
       },
       required: ['selector', 'value'],
     },
   },
   {
     name: 'get_text',
-    description: 'Extract visible text content from the page or a specific element',
+    description: 'Get visible text from the page or a specific element. Use for reading results after form submission.',
     input_schema: {
       type: 'object' as const,
       properties: {
-        selector: { type: 'string', description: 'CSS selector to extract text from. Omit to get full page text.' },
+        selector: { type: 'string', description: 'CSS selector. Omit to get full page text.' },
       },
       required: [],
     },
   },
   {
     name: 'assert',
-    description: 'Record a test assertion — pass or fail — with a human-readable message',
+    description: 'Record a test assertion — pass or fail',
     input_schema: {
       type: 'object' as const,
       properties: {
         passed: { type: 'boolean', description: 'Whether the assertion passed' },
-        message: { type: 'string', description: 'Description of what was checked' },
+        message: { type: 'string', description: 'What was checked and what was found' },
       },
       required: ['passed', 'message'],
     },
   },
   {
     name: 'done',
-    description: 'Signal that all test goals have been completed',
+    description: 'Signal that all test goals are complete',
     input_schema: {
       type: 'object' as const,
       properties: {
-        summary: { type: 'string', description: 'Brief summary of what was tested and the overall result' },
+        summary: { type: 'string', description: 'Brief summary of results' },
       },
       required: ['summary'],
     },
@@ -114,9 +119,44 @@ export async function executeTool(
 
   switch (name) {
     case 'navigate': {
-      await page.goto(input.url as string, { waitUntil: 'domcontentloaded', timeout: 30000 })
-      await page.waitForTimeout(1000)
+      await page.goto(input.url as string, { waitUntil: 'networkidle', timeout: 30000 })
       return { result: [{ type: 'text', text: `Navigated to ${input.url}` }], done: false }
+    }
+
+    case 'get_page_info': {
+      const info = await page.evaluate(() => {
+        const title = document.title
+        const headings = Array.from(document.querySelectorAll('h1,h2,h3')).map(h => `${h.tagName}: ${h.textContent?.trim()}`)
+
+        const inputs = Array.from(document.querySelectorAll('input,textarea,select')).map(el => {
+          const input = el as HTMLInputElement
+          const id = input.id ? `#${input.id}` : ''
+          const name = input.name ? `[name="${input.name}"]` : ''
+          const selector = id || name || input.tagName.toLowerCase()
+          const label = document.querySelector(`label[for="${input.id}"]`)?.textContent?.trim()
+            ?? input.closest('label')?.textContent?.trim()
+            ?? input.getAttribute('placeholder')
+            ?? input.getAttribute('aria-label')
+            ?? ''
+          return `${input.tagName.toLowerCase()}${selector} — label: "${label}", type: ${input.type ?? 'text'}, value: "${input.value}"`
+        })
+
+        const buttons = Array.from(document.querySelectorAll('button,[role="button"]'))
+          .map(b => `"${b.textContent?.trim()}"`)
+          .filter(b => b.length > 2)
+          .slice(0, 20)
+
+        return { title, headings, inputs, buttons }
+      })
+
+      const text = [
+        `Title: ${info.title}`,
+        `Headings:\n${info.headings.map(h => `  ${h}`).join('\n')}`,
+        `Inputs (use these selectors for fill/select):\n${info.inputs.map(i => `  ${i}`).join('\n')}`,
+        `Buttons (use exact text for click):\n  ${info.buttons.join(', ')}`,
+      ].join('\n\n')
+
+      return { result: [{ type: 'text', text: text.slice(0, 5000) }], done: false }
     }
 
     case 'screenshot': {
@@ -130,20 +170,22 @@ export async function executeTool(
     case 'click': {
       const sel = input.selector as string
       try {
-        // Try CSS selector first, then text
         const loc = page.locator(sel).first()
         await loc.waitFor({ timeout: 5000 })
         await loc.click()
       } catch {
         await page.getByText(sel, { exact: false }).first().click()
       }
-      await page.waitForTimeout(500)
-      return { result: [{ type: 'text', text: `Clicked: ${input.selector}` }], done: false }
+      await page.waitForTimeout(300)
+      return { result: [{ type: 'text', text: `Clicked: ${sel}` }], done: false }
     }
 
     case 'fill': {
-      await page.locator(input.selector as string).first().fill(input.value as string)
-      return { result: [{ type: 'text', text: `Filled "${input.selector}" with "${input.value}"` }], done: false }
+      const sel = input.selector as string
+      const loc = page.locator(sel).first()
+      await loc.waitFor({ timeout: 5000 })
+      await loc.fill(input.value as string)
+      return { result: [{ type: 'text', text: `Filled "${sel}" with "${input.value}"` }], done: false }
     }
 
     case 'select': {
@@ -161,8 +203,7 @@ export async function executeTool(
     case 'assert': {
       const a = { passed: input.passed as boolean, message: input.message as string }
       assertions.push(a)
-      const icon = a.passed ? '✓' : '✗'
-      return { result: [{ type: 'text', text: `${icon} ${a.message}` }], done: false }
+      return { result: [{ type: 'text', text: `${a.passed ? '✓' : '✗'} ${a.message}` }], done: false }
     }
 
     case 'done': {

@@ -44,14 +44,13 @@ Base URL: ${baseUrl}
 Your current test goal: "${goal}"
 
 Instructions:
-- Use get_text() to read page content — it is fast and cheap. Prefer it for all verification.
-- AVOID screenshot() unless the page is behaving unexpectedly and you cannot diagnose it from text alone. Screenshots are very expensive — use at most 1 per goal.
-- To verify text/values: navigate, then get_text() to read the result. Do NOT screenshot to verify.
-- To interact: use click() and fill() directly. You do not need to screenshot before or after.
-- Use assert() to record specific checks (e.g. "Monthly payment is a valid dollar amount")
-- Fill in realistic test values, submit forms, and verify results make sense from the text content
+- After navigating, ALWAYS call get_page_info() first — it gives you exact input selectors, button text, and headings so you know what to interact with
+- Use the selectors from get_page_info() in fill() and click() calls — do not guess selectors
+- Use get_text() to read results after form submission
+- NEVER use screenshot() — it is extremely expensive. Use get_page_info() and get_text() instead.
+- Use assert() to record specific checks with what you actually found (e.g. "Monthly payment shows $2,029 which is in range $1,000–$5,000")
 - When you have fully tested the goal, call done() with a summary
-- If something is broken or unexpected, use assert(passed=false, ...) to record it
+- If something is broken, use assert(passed=false, message="what went wrong")
 - Max ${MAX_ITERATIONS} steps — be efficient`
 
   messages.push({
